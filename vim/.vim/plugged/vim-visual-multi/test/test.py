@@ -14,10 +14,6 @@ import subprocess
 from pynvim import attach
 
 
-# -------------------------------------------------------------
-# global varialbes
-# -------------------------------------------------------------
-
 class bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -29,8 +25,8 @@ class bcolors:
     UNDERLINE = '\033[4m'
 
 
-SUCCESS_STR = "{}SUCCESS{}".format(bcolors.OKGREEN, bcolors.ENDC)
-FAIL_STR = "{}FAIL{}".format(bcolors.FAIL, bcolors.ENDC)
+SUCCESS_STR = f"{bcolors.OKGREEN}SUCCESS{bcolors.ENDC}"
+FAIL_STR = f"{bcolors.FAIL}FAIL{bcolors.ENDC}"
 CLIENT = None
 
 
@@ -62,10 +58,7 @@ def get_test_description(test):
     commands = Path('tests/', test, 'commands.py').resolve(strict=True)
     with open(commands) as file:
         desc = file.readline()
-    if desc[0] == '#':
-        return (desc[2:-1])
-    else:
-        return ('')
+    return desc[2:-1] if desc[0] == '#' else ''
 
 
 def get_test_info(test, nvim, vimrc):
@@ -85,14 +78,13 @@ def print_tests_list(tests, f):
 
 def get_paths(test, f):
     """Create the dictionary with the relevant file paths."""
-    paths = {}
-    paths["vimrc"] = get_vimrc(test, f)
+    paths = {"vimrc": get_vimrc(test, f)}
     paths["command"] = Path('tests/', test, 'commands.py').resolve(strict=True)
     paths["in_file"] = Path('tests/', test, 'input_file.txt').resolve(strict=True)
     paths["config"] = Path('tests/', test, 'config.json').resolve()
     paths["exp_out_file"] = Path('tests/', test, 'expected_output_file.txt').resolve(strict=True)
     paths["gen_out_file"] = Path('tests/', test, 'generated_output_file.txt').resolve()
-    paths["socket"] = Path('socket_' + test).resolve()
+    paths["socket"] = Path(f'socket_{test}').resolve()
     return paths
 
 
@@ -118,14 +110,20 @@ def run_core(paths, nvim=False):
         # client/server connection
         server = multiprocessing.Process(
             target=subprocess.call,
-            args=(VIM + " -u " + str(paths["vimrc"]) + ' --listen ' + str(paths["socket"]),),
-            kwargs={'shell': True}
+            args=(
+                f"{VIM} -u "
+                + str(paths["vimrc"])
+                + ' --listen '
+                + str(paths["socket"]),
+            ),
+            kwargs={'shell': True},
         )
+
         server.start()
         time.sleep(1)
         CLIENT = attach('socket', path=str(paths["socket"]))
         # run test
-        CLIENT.command('e %s' % paths["in_file"])
+        CLIENT.command(f'e {paths["in_file"]}')
         keys = keys_nvim
         start_time = time.process_time()
         commands = open(paths["command"]).read()
@@ -133,7 +131,7 @@ def run_core(paths, nvim=False):
             commands = r'keys(r":let g:VM_live_editing = 0\<CR>")\n' + commands
         exec(commands)
         end_time = time.process_time()
-        CLIENT.command(':w! %s' % paths["gen_out_file"])
+        CLIENT.command(f':w! {paths["gen_out_file"]}')
         CLIENT.quit()
     else:
         vim = vimrunner.Server(noplugin=False, vimrc=paths["vimrc"], executable=VIM)
@@ -167,14 +165,16 @@ def run_one_test(test, f=None, nvim=False):
     time_str = "(took {:.3f} sec)".format(commands_cpu_time)
     if filecmp.cmp(paths["exp_out_file"], paths["gen_out_file"]):
         if "max_cpu_time" in config and config["max_cpu_time"] < commands_cpu_time:
-            log("{} {} {}[slow]{} {}".format(info, FAIL_STR,
-                                             bcolors.WARNING, bcolors.ENDC, time_str), f)
+            log(f"{info} {FAIL_STR} {bcolors.WARNING}[slow]{bcolors.ENDC} {time_str}", f)
             return False
-        log("{} {} {}".format(info, SUCCESS_STR, time_str), f)
+        log(f"{info} {SUCCESS_STR} {time_str}", f)
         return True
     else:
-        log("{} {} {}[mismatch]{} {}".format(info, FAIL_STR,
-                                             bcolors.WARNING, bcolors.ENDC, time_str), f)
+        log(
+            f"{info} {FAIL_STR} {bcolors.WARNING}[mismatch]{bcolors.ENDC} {time_str}",
+            f,
+        )
+
         return False
 
 
@@ -192,7 +192,7 @@ def main():
 
     # vim version and default vimrc
     global VIM, DEFAULT_VIMRC, KEY_PRESS_INTERVAL, LIVE_EDITING, DIFF_FAILED
-    VIM = shutil.which('vim' if not args.nvim else 'nvim')
+    VIM = shutil.which('nvim' if args.nvim else 'vim')
     DEFAULT_VIMRC = Path('default/', 'vimrc.vim').resolve(strict=True)
     KEY_PRESS_INTERVAL = args.time[0]
     LIVE_EDITING = args.nolive
@@ -200,29 +200,29 @@ def main():
 
     # execution
     failing_tests = []
-    f = open('test.log', 'w')
-    tests = sorted([PurePath(str(p)).name for p in Path('tests').glob('*')])
-    if args.list:
-        print_tests_list(tests, f)
-    else:
-        print_banner("Starting vim-visual-multi tests", f)
-        tests = tests if args.test is None else [args.test]
-        for t in tests:
-            if run_one_test(t, f, args.nvim) is not True:
-                failing_tests.append(t)
-        if failing_tests == []:
-            print_banner("summary: " + SUCCESS_STR, f)
+    with open('test.log', 'w') as f:
+        tests = sorted([PurePath(str(p)).name for p in Path('tests').glob('*')])
+        if args.list:
+            print_tests_list(tests, f)
         else:
-            print_banner("summary: " + FAIL_STR, f)
-            log("the following tests failed:", f)
-            log("\n".join(failing_tests), f)
-            if DIFF_FAILED:
-                for t in failing_tests:
-                    print_banner(t)
-                    exp = 'tests/' + t + '/expected_output_file.txt'
-                    gen = 'tests/' + t + '/generated_output_file.txt'
-                    subprocess.run('diff --color=always ' + exp + ' ' + gen, shell=True)
-    f.close()
+            print_banner("Starting vim-visual-multi tests", f)
+            tests = tests if args.test is None else [args.test]
+            failing_tests.extend(
+                t for t in tests if run_one_test(t, f, args.nvim) is not True
+            )
+
+            if not failing_tests:
+                print_banner(f"summary: {SUCCESS_STR}", f)
+            else:
+                print_banner(f"summary: {FAIL_STR}", f)
+                log("the following tests failed:", f)
+                log("\n".join(failing_tests), f)
+                if DIFF_FAILED:
+                    for t in failing_tests:
+                        print_banner(t)
+                        exp = f'tests/{t}/expected_output_file.txt'
+                        gen = f'tests/{t}/generated_output_file.txt'
+                        subprocess.run(f'diff --color=always {exp} {gen}', shell=True)
     if failing_tests != []:
         sys.exit(1)
 

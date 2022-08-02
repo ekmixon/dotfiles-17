@@ -65,5 +65,5 @@ def ev(exp):
 
 def let(name, value):
     """Let variable through vim command."""
-    vim.command('let %s = %s' % (name, str(value)))
+    vim.command(f'let {name} = {str(value)}')
 

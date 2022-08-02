@@ -47,13 +47,9 @@ if "session" not in session_content:
         f.write(content)
 
 # Count unread messages.
-unread_count = 0
-for dialog in client.iter_dialogs(archived=False):
-    # Count only direct messages.
-    if dialog.is_user:
-        unread_count += dialog.unread_count
-        pass
-    else:
-        unread_count += dialog.unread_mentions_count
+unread_count = sum(
+    dialog.unread_count if dialog.is_user else dialog.unread_mentions_count
+    for dialog in client.iter_dialogs(archived=False)
+)
 
 print(unread_count)
